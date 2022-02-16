@@ -1,0 +1,15 @@
+# Thanks to https://askubuntu.com/a/679600
+# FIXME: This works not when the label contains hyphens e.g. Toshiba-Jan-2022
+#
+[Unit]
+Description=Keep drowsy drive %i alive
+Requires=run-media-%u-%i.mount
+After=run-media-%u-%i.mount
+
+[Service]
+Type=forking
+PIDFile=/tmp/TickleToshiba/run/media/%u/%i
+ExecStart=tickle-toshiba 160 /run/media/%u/%i
+
+[Install]
+WantedBy=run-media-%u-%i.mount

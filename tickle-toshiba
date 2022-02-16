@@ -1,0 +1,205 @@
+#!/bin/bash
+#
+#  TickleToshiba - An evil daemon to keep drowsy hard drives alive
+#
+#  The MIT License (MIT) Copyright © 2022 loh.tar@googlemail.com
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of
+#  this software and associated documentation files (the “Software”), to deal in
+#  the Software without restriction, including without limitation the rights to
+#  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+#  the Software, and to permit persons to whom the Software is furnished to do so,
+#  subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in all
+#  copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+#  FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+#  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+#  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+#  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+
+#
+# Don't be lazy, do it neatly
+# BEGIN Setup
+#
+# Sorry dear Toshiba, but you have to endure the mockery and cursing now
+declare -r myVersion="0.8"
+declare -r myVersionDate="Feb 2022"
+declare -r myName="TickleToshiba"
+declare -r tickleFileName="dont_sleep_blasted_drive" # I was was pretty peeved about my new purchase
+declare -r myCall=$(basename $0)
+declare -r minTickleTime="60" # The min value of the <seconds> argument
+declare -r realSleepTime="5"  # We don't sleep the TickleTime at full to be more responsive
+#
+# END   Setup
+# BEGIN Functions
+#
+
+# It's better not to use echo http://unix.stackexchange.com/a/65819
+print() {
+   printf "%s\n" "$1" >&2;
+}
+
+printNoln() {
+   printf "%s" "$1" >&2;
+}
+
+exitNormal() { print "$*"; exit 0; }
+exitError()  { print "$*"; exit 1; }
+exitUsage()  { printUsage; exit 1; }
+
+killEvilTwin() {
+    [[ -f ${pidFile} ]] || exitError "No PID file, no daemon to kill"
+
+    twinPid=$( cat "${pidFile}" )
+    printNoln "I go to kill my evil twin with PID ${twinPid} ... "
+
+    # Always be on the save side
+    if [[ ! $( ps -ax | grep "${twinPid}" | grep $(basename $0) ) ]] ; then
+        print "FAIL!"
+        exitError "Did nothing! PID in ${pidFile} don't match an evil twin of me"
+    fi
+
+    if [[ $(kill "${twinPid}") ]] ; then
+        print "FAIL!"
+        exitError "No rights to kill that process?"
+    fi
+
+    exitNormal "OK"
+}
+
+cleanUpPid() {
+    rm "${pidFile}" 2>/dev/null
+    rmdir --ignore-fail-on-non-empty -p "${pidDir}" 2>/dev/null
+}
+
+cleanUpBeforeEvilDie() {
+    cleanUpPid
+    exitNormal "Receive signal to stop tickling - OK"
+}
+
+adjustSleepTime() {
+    [[ $sleepTime -ge $minTickleTime ]] && return
+    print "Tickle every ${sleepTime}s? I'm evil, but not THAT evil. Will tickle every ${minTickleTime}s"
+    sleepTime=$minTickleTime
+}
+
+beEvil() {
+    print "I go to the background and keep that blasted drive alive"
+
+    # Setup a handy PID file...
+    mkdir -p "${pidDir}"
+    printf "${BASHPID}" > "${pidFile}"
+    # ...and ensure to clean it up with our last breath
+    trap cleanUpBeforeEvilDie SIGTERM
+
+    local startTime
+    local currentTime
+
+    adjustSleepTime
+
+    # Thanks to https://unix.stackexchange.com/a/428223
+    printf -v startTime '%(%F_%H:%M:%S)T' -1
+
+    for((i=0; ;++i)); do
+        printf -v currentTime '%(%F_%H:%M:%S)T' -1
+        # Write own PID into tickle file so we know who is at work and some other stuff
+        printf "Round:${i}\tEvery:${sleepTime}sec\tStart:${startTime}\tLast:${currentTime}\tPID:${BASHPID}\n" > "${tickle}"
+
+        # Don't sleep the full time at once, we would handle SIGTERM too slow
+        for((j=0; j<sleepTime ;j+=5)); do
+            sleep "${realSleepTime}s"
+            if [[ ! -f ${tickle} ]] ; then
+                cleanUpPid
+                exitNormal "Oops! Drive (or tickle file?) is suddenly gone - OK, bye";
+            fi
+            # At this point we could read the seconds out of the tickle file
+            # That way the user could change the tickle frequency with some editor
+            # But I guess its not really needed
+        done
+    done
+}
+
+check4Drive() {
+    [[ ! -d $1 ]] && exitError "Drive not mounted"
+    [[ ! -w $1 ]] && exitError "Have no write access to directory"
+}
+
+printUsage() {
+    cat <<_EOF
+Usage: ${myCall} <seconds> <mount-point-to-tickle>
+       ${myCall} --stop <mount-point-to-tickle>
+       ${myCall} [--license] [--help|-h|-?]
+_EOF
+}
+
+#
+# END   Functions
+# BEGIN Main
+#
+
+# Let's explain more than necessary. Does not hurt
+if [[ $1 == "-h" || $1 == "-?" || $1 == "--help" ]] ; then
+    echo -e "This is ${myName} version ${myVersion} - ${myVersionDate}\n"
+    printUsage
+    cat <<_EOF
+
+Task : Once started I will 'tickle' the given mount-point as an evil daemon until it's gone
+       or I'm called to stop tickling at a given mount-point
+How? : I will write every <seconds> some data about my doing into a 'tickle-file',
+       so write access is needed. Don't Panik! The file will not grow above a few byte
+Hint : Of cause I not only work with blasted Toshiba drives
+_EOF
+    exit
+fi
+
+# Let's be a smartass and cut the license out of the source file
+if [[ $1 == "--license" ]] ; then
+    PATH="$PATH:$(dirname $0)"                       # Only needed when not yet properly installed
+    myFullPath=$(which $(basename $0))
+    echo
+    head -n22 $myFullPath|tail -n20|cut -b2-
+    echo
+    exit
+fi
+
+# So far, no user education requested, looks good?
+[[ ! $# -eq 2 ]] && exitUsage
+
+declare    sleepTime="${1}" # Well, at this point isn't that for sure, but we don't care
+declare    toshiba="${2}"
+declare -r tickle="${toshiba}/${tickleFileName}"
+declare -r pidFile="/tmp/${myName}${toshiba}" # No / between name/drive, drive should have one
+declare -r pidDir=$(dirname "${pidFile}")
+
+check4Drive "$toshiba"
+
+if [[ $1 == "--stop" ]] ; then
+    killEvilTwin
+fi
+
+# Thanks to https://stackoverflow.com/a/806923
+re="^[1-9][0-9]*$"
+[[ ! $1 =~ $re ]] && exitError "<seconds> must be a positive integer"
+
+if [[ -f ${pidFile} && -f ${tickle} ]] ; then
+    print "There seems to be an evil twin at work, I will trick him away"
+    rm "${tickle}"
+    sleep "${realSleepTime}s"
+fi
+
+# Thanks to https://stackoverflow.com/a/23908093
+(beEvil) &
+disown
+
+# We sleep here only to give the forked beEvil process time for setup
+# otherwise will systemd grumble when using our service unit
+#   tickle-toshiba.service: Can't open PID file /tmp/TickleToshiba.. (yet?) after start: Operation not permitted
+sleep 2
+
+# That's all Folks!
+# END main

@@ -1,0 +1,143 @@
+TickleToshiba - An evil daemon to keep drowsy hard drives alive
+The MIT License (MIT) Copyright © 2022 loh.tar@googlemail.com
+
+                                                          Version 0.8 - Feb 2022
+systemd Service Setup Notes
+=============================
+The following hints are for those who are not an expert. Experts may know other
+ways to get it running too. Here we will setup the tickle service for a single
+user. Whenever the user plug in his blasted_drive and let it mount by his
+desktop environment, the tickle daemon will auto started by systemd.
+
+TickleToshiba comes with two systemd service files. When you enable one of these
+service will be some text printed containing...
+
+    "added as a dependency to a non-existent unit"
+
+..don't worry, that's OK!
+
+
+1) tickle-@.service
+---------------------
+Which should be ready to use after install. To do so run as normal user:
+
+    $ systemctl --user enable tickle-@YourDriveLabel.service
+
+That's it. The service file starts the daemon with a tickle interval of 160sec.
+If you need a different time you need to edit the file, sorry. You may found it
+at /usr/lib/systemd/user/tickle-@.service. To avoid that possible future updates
+overwrite your handy work you should rename the file or move it to a save place
+like /etc/systemd/user. In any doubt consult systemd documentation.
+
+If your drive don't have a label, consider to change that. It may not mandatory
+but was not tested. However, to get the data you need, see below at Blue Print.
+
+Hint: Some label may cause trouble, like with hyphens "-". Change the label or
+use the 2) option.
+
+
+2) tickle-toshiba.service
+---------------------------
+Which is part of this file, see below Blue Print. Copy the relevant parts into
+a file <whatever-name>.service, below one of these directories:
+
+    ~/.config/systemd/user or ~/.local/share/systemd/user
+
+They may not exist, create them. Then run like above:
+
+    $ systemctl --user enable <whatever-name>.service
+
+That's it.
+
+
+Verify Success
+================
+The easiest way should be to run...
+
+    $ journalctl -f
+
+...and then to plug in the drive in question. Alternatively, you can also see
+what had happened like this:
+
+    $ systemctl --user status <the-new-tickle>.service
+
+When you remove the drive will the daemon exorcise himself.
+Of cause you can stop the tickling temporary manually, for whatever reason...
+
+    $ systemctl --user stop <the-new-tickle>.service
+
+...or restart manually...
+
+    $ systemctl --user start <the-new-tickle>.service
+
+Have fun!
+
+
+Blue Print
+============
+Thanks to https://askubuntu.com/a/679600
+When you compare the advices at the link with the hints following, you may
+notice that here we have "run-media-" whereas there is only "media-", perhaps
+due to Ubuntu/ArchLinux differences. Who knows.
+
+These advices are fitting to KDE/Plasma with udisks mount helper, other systems
+may differ. Run the commands as normal user:
+
+1. Connect and mount your drowsy drive
+2. systemctl list-units -t mount
+3. Copy the data with your drive in the outer left column "UNIT" and modify
+   the blue print accordingly. Save as new file as noted in 2) above.
+4. Enable the new created service as shown above. You are done!
+
+In case of trouble, due to some typo in the new file, just fix it and run...
+
+   $ systemctl --user daemon-reload
+
+...or alternatively
+
+    $ systemctl --user reenable <the-new-tickle>.service
+
+
+
+Blue Print tickle-toshiba.service
+-----------------------------------
+
+    [Unit]
+    # You may want to alter this line, it's later shown in journalctl output
+    Description=Keep blasted Toshiba drive alive
+
+    Requires=run-media-<username>-<drive-label>.mount
+    After=run-media-<username>-<drive-label>.mount
+
+    [Service]
+    Type=forking
+    ExecStart=tickle-toshiba <seconds> <mount-point-to-tickle>
+    PIDFile=/tmp/TickleToshiba/<mount-point-to-tickle>
+
+    [Install]
+    WantedBy=run-media-<username>-<drive-label>.mount
+
+
+Example tickle-toshiba.service
+--------------------------------
+
+    [Unit]
+    Description=Keep blasted Toshiba drive alive
+
+    # My drive had the label "Toshiba-Jan-2022", and the hyphen "-" needs a
+    # special treatment, but not by me. It's just copy/paste from above
+    # list-units command
+    Requires=run-media-lot-Toshiba\x2dJan\x2d2022.mount
+    After=run-media-lot-Toshiba\x2dJan\x2d2022.mount
+
+    [Service]
+    Type=forking
+
+    # The <mount-point-to-tickle> is in the outer right column of the above
+    # list-units command
+    ExecStart=tickle-toshiba 160 /run/media/lot/Toshiba-Jan-2022
+    PIDFile=/tmp/TickleToshiba/run/media/lot/Toshiba-Jan-2022
+
+    [Install]
+    # As you see, once more just paste from list-units command
+    WantedBy=run-media-lot-Toshiba\x2dJan\x2d2022.mount
