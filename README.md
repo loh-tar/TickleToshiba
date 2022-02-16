@@ -110,9 +110,9 @@ Then tried *hd-idl*:
 
 ## TODO/BUGS
 
-- tickle-@.service has hard coded `<seconds>` parm of 160sec, so I guess a config file may helpful
-- tickle-@.service did not support drive label with hyphen
-- Convert tickle-toshiba.txt into a nice man page
+- `tickle-@.service` has hard coded `<seconds>` parm of 160sec, so I guess a config file may helpful
+- `tickle-@.service` did not support drive label with hyphen
+- Convert `tickle-toshiba.txt` into a nice man page
 
 ## Thanks To
 
